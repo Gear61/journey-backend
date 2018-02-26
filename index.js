@@ -1,6 +1,14 @@
 var express = require('express');
 var app = express();
+var FB = require('fb');
+
+// PostgreSQL client
 const { Client } = require('pg')
+
+// POST body parsing
+var bodyParser = require('body-parser');
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 app.set('port', (process.env.PORT || 5000));
 
@@ -29,6 +37,26 @@ app.get('/db', function (request, response) {
   		response.send(res.rows[0]);
   		client.end();
 	})
+});
+
+app.post('/onboarding/facebook', function(request, response) {
+	var access_token = request.body.access_token;
+
+	FB.setAccessToken(access_token);
+    FB.api('me', { fields: ['name', 'email', 'picture.type(large)'] }, function (res) {
+	  if(!res || res.error) {
+	    response.status(400);
+	    response.send({'error': res.error});
+	    return;
+	  }
+
+	  response.status(200);
+	  var user_info = {};
+	  user_info['name'] = res.name;
+	  user_info['email'] = res.email;
+	  user_info['profile_picture_url'] = res.picture.data.url;
+	  response.send({'user_info': user_info});
+	});
 });
 
 app.listen(app.get('port'), function() {
