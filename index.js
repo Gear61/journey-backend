@@ -52,53 +52,19 @@ app.post('/onboarding/facebook', function(request, response) {
 		var name = user_info.name;
 		var email = user_info.email;
 		var profile_picture_url = user_info.picture.data.url;
-
-		const account_query = 'SELECT * FROM Account WHERE email = $1';
-		const values = [email];
-
-		const client = getDatabaseClient();
-		client.connect();
-		client.query(account_query, values)
-			.then(res => {
-				client.end();
-
-				// Account doesn't exist yet; create it and return
-				if (res.rows.length == 0) {
-					console.log("Account doesn't exist for email: " + email);
-					var login_type = 'FACEBOOK';
-					createAccount(name, email, profile_picture_url, login_type, response);
-				} else {
-					if (res.rows[0].login_type === 'FACEBOOK') {
-						console.log("Account already exists for email: " + email);
-						response.send(res.rows[0]);
-					} else {
-						console.log("Non-Facebook account already exists for email: " + email);
-						response.status(401);
-						var error = {'error': 'email_in_use'};
-						response.send(error);
-					}
-				}
-			})
-			.catch(e => {
-				console.error(e.stack)
-				response.status(500);
-				var error = {'error': 'internal_server_error'};
-				response.send(error);
-			});
+		signUp(name, email, profile_picture_url, 'FACEBOOK', response);
 	});
 });
 
 async function createAccount(name, email, profile_picture_url, login_type, response) {
 	const insert_query = 'INSERT INTO Account(name, email, profile_picture_url, login_type) ' +
-						 'VALUES($1, $2, $3, $4) RETURNING *'
+						 'VALUES($1, $2, $3, $4) RETURNING name, email, profile_picture_url'
 	const values = [name, email, profile_picture_url, login_type];
 
 	const client = getDatabaseClient();
 	client.connect();
 	client.query(insert_query, values)
 		.then(res => {
-			console.log(res.rows[0])
-			response.status(200);
 			response.send(res.rows[0]);
 		})
 		.catch(e => {
@@ -121,13 +87,56 @@ async function verifyGoogleToken(token, response) {
 	});
 	const payload = ticket.getPayload();
 
-	response.status(200);
-	var user_info = {};
-	user_info['name'] = payload['name'];
-	user_info['email'] = payload['email'];
-	user_info['profile_picture_url'] = payload['picture'];
-	response.send(user_info);
+	var name = payload.name;
+	var email = payload.email;
+	var profile_picture_url = payload.picture
+	signUp(name, email, profile_picture_url, 'GOOGLE', response);
 }
+
+async function signUp(name, email, profile_picture_url, login_type, response) {
+	const account_query = 'SELECT name, email, profile_picture_url, login_type FROM Account WHERE email = $1';
+	const values = [email];
+
+	const client = getDatabaseClient();
+	client.connect();
+	client.query(account_query, values)
+		.then(res => {
+			client.end();
+
+			// Account doesn't exist yet; create it and return
+			if (res.rows.length == 0) {
+				console.log("Account doesn't exist for email: " + email);
+				createAccount(name, email, profile_picture_url, login_type, response);
+			} else {
+				if (res.rows[0].login_type == login_type) {
+					console.log("Account already created with " + login_type);
+					response.send(res.rows[0]);
+				} else {
+					console.log("Email already used, can't create with " + login_type);
+					response.status(401);
+					var error = {'error': 'email_in_use'};
+					response.send(error);
+				}
+			}
+		})
+		.catch(e => {
+			console.error(e.stack)
+			response.status(500);
+			var error = {'error': 'internal_server_error'};
+			response.send(error);
+		});
+}
+
+app.post('/onboarding/login', function(request, response) {
+	var email = request.body.email;
+	var password = request.body.password;
+});
+
+app.post('/onboarding/signup', function(request, response) {
+	var name = request.body.name;
+	var email = request.body.email;
+	var password = request.body.password;
+});
 
 app.listen(app.get('port'), function() {
   	console.log('Node app is running on port', app.get('port'));
